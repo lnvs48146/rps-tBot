@@ -4,22 +4,24 @@ import random
 import re
 from twitchio.ext import commands
 
-# ===== CONFIG FROM ENV VARIABLES =====
-BOT_NICK = os.environ["BOT_NICK"]           # Your bot's Twitch username
-CHANNEL = os.environ["CHANNEL"]             # Twitch channel
-TOKEN = os.environ["TOKEN"]                 # OAuth token with chat:read and chat:edit scopes
-CLIENT_ID = os.environ["CLIENT_ID"]         # Twitch Client ID
-CLIENT_SECRET = os.environ["CLIENT_SECRET"] # Twitch Client Secret
-BOT_ID = os.environ["BOT_ID"]               # Twitch Bot user ID
+# ===== CONFIG from environment variables =====
+BOT_NICK = os.environ["BOT_NICK"]
+CHANNEL = os.environ["CHANNEL"]
+TOKEN = os.environ["TOKEN"]
+CLIENT_ID = os.environ["CLIENT_ID"]
+CLIENT_SECRET = os.environ["CLIENT_SECRET"]
+BOT_ID = os.environ["BOT_ID"]
 
 CHEAT_MODE = 0                    # 0 = normal, 100 = always rigged
 CHEAT_PREVIEW_COUNT = 5           # Number of next bot moves to preview
 SEND_DELAY = 0.3                  # Delay between bot sends in seconds
+
 MIN_POINTS = 10000
 MAX_POINTS = 500000
-# ====================================
+# ===========================================
 
 class RPSBot(commands.Bot):
+
     def __init__(self):
         super().__init__(
             token=TOKEN,
@@ -36,29 +38,32 @@ class RPSBot(commands.Bot):
         print(f"{BOT_NICK} is online!")
 
     async def event_message(self, message):
-        if message.author is None or message.author.name.lower() == BOT_NICK.lower():
+        if message.author is None:
+            return
+        author = message.author.name
+        if author.lower() == BOT_NICK.lower():
             return
 
-        author = message.author.name
         content = message.content.lower().strip()
         print(f"[CHAT] {author}: {message.content}")
 
-        # Handle !give points
+        # Check for points give to bot
         match = re.match(r"!give\s+@?" + re.escape(BOT_NICK.lower()) + r"\s+([0-9kKmM]+)", content)
         if match:
             raw_amount = match.group(1)
             amount = self.parse_points(raw_amount)
             print(f"[DEBUG] {author} wants to play with {amount} points")
 
+            # Out of range
             if amount < MIN_POINTS or amount > MAX_POINTS:
-                msg = (f"The limit for playing is {MIN_POINTS:,} to {MAX_POINTS:,} points, omeBru, {author}! "
-                       f"Your {amount:,} points are returned!")
+                msg = f"The limit for playing is {MIN_POINTS:,} to {MAX_POINTS:,} points, omeBru, {author}! Your {amount:,} points are returned!"
                 print(f"[BOT] {msg}")
                 await message.channel.send(msg)
                 await asyncio.sleep(SEND_DELAY)
                 await message.channel.send(f"!givepoints {author} {amount}")
                 return
 
+            # Already playing
             if author in self.pending_rps:
                 msg = f"{author}, you already have a game running! Returning your points!"
                 print(f"[BOT] {msg}")
@@ -67,6 +72,7 @@ class RPSBot(commands.Bot):
                 await message.channel.send(f"!givepoints {author} {amount}")
                 return
 
+            # Add user to pending games
             rigged = (CHEAT_MODE == 100)
             self.pending_rps[author] = {'amount': amount, 'rigged': rigged}
             if rigged:
@@ -77,7 +83,7 @@ class RPSBot(commands.Bot):
             await message.channel.send(msg)
             return
 
-        # Handle RPS choice
+        # Check if user is responding with RPS choice
         if author in self.pending_rps:
             user_choice = content
             if user_choice not in ["rock", "paper", "scissors"]:
@@ -98,17 +104,20 @@ class RPSBot(commands.Bot):
 
             if user_choice == bot_choice:
                 result_text = f"TIE {author}, we both chose {bot_choice}. Your {amount:,} points are returned!"
+                print(f"[GAME] {result_text}")
                 await message.channel.send(result_text)
                 await asyncio.sleep(SEND_DELAY)
                 await message.channel.send(f"!givepoints {author} {amount}")
             elif self.user_wins(user_choice, bot_choice):
                 payout = amount * 3
                 result_text = f"🎉 {author} WON! I chose {bot_choice}, you get {payout:,} points!"
+                print(f"[GAME] {result_text}")
                 await message.channel.send(result_text)
                 await asyncio.sleep(SEND_DELAY)
                 await message.channel.send(f"!givepoints {author} {payout}")
             else:
                 result_text = f"LOSER I chose {bot_choice}, {author}! You lost your {amount:,} points."
+                print(f"[GAME] {result_text}")
                 await message.channel.send(result_text)
 
             self.pending_rps.pop(author)
@@ -133,7 +142,10 @@ class RPSBot(commands.Bot):
         )
 
     def show_next_games(self):
-        return [self.bot_choice() for _ in range(CHEAT_PREVIEW_COUNT)]
+        preview = []
+        for i in range(CHEAT_PREVIEW_COUNT):
+            preview.append(self.bot_choice())
+        return preview
 
 if __name__ == "__main__":
     bot = RPSBot()
